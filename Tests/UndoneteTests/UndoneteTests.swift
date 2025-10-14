@@ -21,7 +21,7 @@ struct PaintModel {
     var color: String = "black"
 }
 
-struct AddRectangleCommand: CommandWithResult {
+struct AddRectangleCommand: Command {
     typealias Model = PaintModel
     typealias Instruction = Rectangle
     typealias Result = Int // index of the added rectangle
