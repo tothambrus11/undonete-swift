@@ -1,0 +1,22 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:undonete-swift}",
+            "name": "Debug VectorEditorSDLApp",
+            "program": "${workspaceFolder:undonete-swift}/.build/debug/VectorEditorSDLApp",
+            "preLaunchTask": "swift: Build Debug VectorEditorSDLApp"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:undonete-swift}",
+            "name": "Release VectorEditorSDLApp",
+            "program": "${workspaceFolder:undonete-swift}/.build/release/VectorEditorSDLApp",
+            "preLaunchTask": "swift: Build Release VectorEditorSDLApp"
+        }
+    ]
+}
