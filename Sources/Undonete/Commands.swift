@@ -14,16 +14,42 @@ public protocol Command<Model> {
     func redo(on: inout Model)
 }
 
+public protocol CommandManager<Model> {
+    associatedtype Model
+    mutating func execute<C: Command>(
+        command: C.Type, instruction: C.Instruction, on model: inout C.Model
+    ) throws -> (doneCommand: C, hadEffect: Bool) where C.Model == Model
+}
+
+extension Command {
+    public static func execute<CM: CommandManager<Model>>(
+        instruction: Instruction, on model: inout Model, commandManager: inout CM
+    ) throws -> (
+        doneCommand: Self, hadEffect: Bool
+    ) {
+        return try commandManager.execute(command: Self.self, instruction: instruction, on: &model)
+    }
+}
+
 extension Command where Instruction == Void {
+    /// Convenience initializer for a commands that doesn't depend on an instruction.
+    public static func execute<CM: CommandManager<Model>>(
+        on model: inout Model, commandManager: inout CM
+    ) throws -> (Self, hadEffect: Bool) where CM.Model == Model {
+        return try commandManager.execute(command: Self.self, instruction: (), on: &model)
+    }
+
     /// Convenience initializer for a commands that doesn't depend on an instruction.
     public static func execute(on model: inout Model) throws -> (Self, hadEffect: Bool) {
         return try self.execute(instruction: (), on: &model)
     }
 }
 
-struct LinearCommandManager<Model> {
-    private var undoStack: [any Command<Model>]
-    private var redoStack: [any Command<Model>]
+public struct LinearCommandManager<Model>: CommandManager {
+    private var undoStack: [any Command<Model>] = []
+    private var redoStack: [any Command<Model>] = []
+
+    public init() {}
 
     public mutating func execute<C: Command>(
         command: C.Type, instruction: C.Instruction, on model: inout C.Model
@@ -75,30 +101,76 @@ struct LinearCommandManager<Model> {
     }
 }
 
-struct CompositeCommandState<Model> {
-    var undoStack: [any DoneCommand<Model>] = []
+public struct CommandExecutor<Model> {
+    private var undoStack: [any Command<Model>] = []
+
+    public mutating func execute<C: Command<Model>>(
+        command: C.Type, instruction: C.Instruction, on model: inout Model
+    ) throws -> (doneCommand: C, hadEffect: Bool) {
+        let result = try C.execute(instruction: instruction, on: &model)
+        if result.hadEffect {
+            undoStack.append(result.doneCommand)
+        }
+        return result
+    }
+
+    fileprivate init() {}
+    fileprivate mutating func extractUndoStack() -> [any Command<Model>] {
+        var stack: [any Command<Model>] = []
+        swap(&stack, &undoStack)
+        return stack
+    }
+
+    fileprivate mutating func undoAll(on model: inout Model) {
+        for command in undoStack.reversed() {
+            command.undo(on: &model)
+        }
+        undoStack.removeAll()
+    }
 }
-struct CompositeCommand<M, Instruction>: Command {
-    static func execute(instruction: (), on model: inout Model) -> ExecutionResult<
-        CompositeCommandState<M>
-    > {
-        // there needs to be some state in the execute that isn't captured.
+public struct CompositeCommand<M>: Command {
+    public typealias Model = M
+    public typealias CompositeResult = Void  // todo maybe add the possibility for results that are not saved in the command - when becomes necessary.
+    public typealias Instruction = (inout Model, inout CommandExecutor<Model>) throws ->
+        CompositeResult
+
+    private let undoStack: [any Command<Model>]
+
+    private init(undoStack: [any Command<Model>]) {
+        self.undoStack = undoStack
     }
 
-    static func undo(
-        instruction: (), on model: inout Model, executionResult: CompositeCommandState<M>
+    public static func execute(instruction: Instruction, on model: inout Model) throws -> (
+        doneCommand: Self, hadEffect: Bool
     ) {
+        var commandExecutor = CommandExecutor<Model>()
 
+        do {
+            try instruction(&model, &commandExecutor)
+            let undoStack = commandExecutor.extractUndoStack()
+
+            return (
+                doneCommand: CompositeCommand(undoStack: undoStack),
+                hadEffect: !undoStack.isEmpty
+            )
+        } catch {
+            commandExecutor.undoAll(on: &model)
+            throw error
+        }
     }
 
-    static func redo(
-        instruction: (), on model: inout Model, executionResult: CompositeCommandState<M>
-    ) {
-
+    public func undo(on model: inout Model) {
+        // Undo all subcommands in reverse order
+        for command in undoStack.reversed() {
+            command.undo(on: &model)
+        }
     }
 
-    typealias Model = M
-    typealias Instruction = ()
-    typealias Result = CompositeCommandState<M>
+    public func redo(on model: inout Model) {
+        // Redo all subcommands in order
+        for command in undoStack {
+            command.redo(on: &model)
+        }
+    }
 
 }

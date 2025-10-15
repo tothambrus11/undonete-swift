@@ -1,4 +1,5 @@
 import Testing
+
 @testable import Undonete
 
 struct Rectangle {
@@ -22,46 +23,65 @@ struct PaintModel {
 }
 
 struct AddRectangleCommand: Command {
-    typealias Model = PaintModel
-    typealias Instruction = Rectangle
-    typealias Result = Int // index of the added rectangle
+    let rectangleToInsert: Rectangle
 
-    func execute(instruction: Rectangle, on model: inout PaintModel) -> ExecutionResult<Int> {
-        model.rectangles.append(instruction)
-        return .success(model.rectangles.count - 1)
+    static func execute(instruction: Rectangle, on model: inout PaintModel) throws -> (
+        doneCommand: AddRectangleCommand, hadEffect: Bool
+    ) {
+        let cmd = AddRectangleCommand(rectangleToInsert: instruction)
+        cmd.redo(on: &model)
+        return (cmd, true)
     }
 
-    func undo(instruction: Rectangle, on model: inout PaintModel, executionResult: Int) {
-        model.rectangles.remove(at: executionResult)
+    func undo(on model: inout PaintModel) {
+        model.rectangles.removeLast()
     }
 
-    func redo(instruction rectangleToInsert: Rectangle, on model: inout PaintModel, executionResult insertionIndex: Int) {
-        model.rectangles.insert(rectangleToInsert, at: insertionIndex)
+    func redo(on model: inout PaintModel) {
+        model.rectangles.append(rectangleToInsert)
     }
-
-    static let command = AddRectangleCommand()
 }
 
-struct AddCircleCommand: CommandWithoutResult {
-    typealias Model = PaintModel
-    typealias Instruction = Circle
+struct AddCircleCommand: Command {
+    let circleToInsert: Circle
+    let insertedAtIndex: Int
 
-    func execute(instruction: Circle, on model: inout PaintModel) -> ExecutionResult<Void> {
+    static func execute(instruction: Circle, on model: inout PaintModel) throws -> (
+        doneCommand: AddCircleCommand, hadEffect: Bool
+    ) {
         model.circles.append(instruction)
-        return .success(())
+        let cmd = AddCircleCommand(
+            circleToInsert: instruction, insertedAtIndex: model.circles.count - 1)
+        return (cmd, true)
     }
 
-    func undo(instruction: Circle, on model: inout PaintModel) {
-        model.circles.removeLast()
+    func undo(on model: inout PaintModel) {
+        model.circles.remove(at: insertedAtIndex)
     }
 
-    func redo(instruction: Circle, on model: inout PaintModel) {
-        model.circles.append(instruction)
+    func redo(on model: inout PaintModel) {
+        model.circles.insert(circleToInsert, at: insertedAtIndex)
     }
-
-    static let command = AddCircleCommand()
 }
 
 @Test func example() async throws {
-    
+    var model = PaintModel()
+    var commandExecutor = LinearCommandManager<PaintModel>()
+
+    let res = try AddCircleCommand.execute(
+        instruction: Circle(x: 10, y: 20, radius: 5), on: &model, commandManager: &commandExecutor)
+    print(res)
+
+    _ = try CompositeCommand.execute(
+        instruction: { (model, executor) in
+
+            _ = try executor.execute(
+                command: AddRectangleCommand.self,
+                instruction: Rectangle(x: 0, y: 0, width: 100, height: 50), on: &model)
+
+            _ = try executor.execute(
+                command: AddCircleCommand.self, instruction: Circle(x: 50, y: 50, radius: 25),
+                on: &model)
+
+        }, on: &model, commandManager: &commandExecutor)
 }
