@@ -87,6 +87,33 @@ public struct Rect: Equatable, Codable, Sendable {
         return point.x >= origin.x && point.y >= origin.y && 
                point.x <= origin.x + size.width && point.y <= origin.y + size.height
     }
+    
+    public func intersects(with other: Rect) -> Bool {
+        let left1 = origin.x
+        let right1 = origin.x + size.width
+        let top1 = origin.y
+        let bottom1 = origin.y + size.height
+        
+        let left2 = other.origin.x
+        let right2 = other.origin.x + other.size.width
+        let top2 = other.origin.y
+        let bottom2 = other.origin.y + other.size.height
+        
+        return !(right1 < left2 || right2 < left1 || bottom1 < top2 || bottom2 < top1)
+    }
+    
+    public func intersects(with circle: Circle) -> Bool {
+        // Find the closest point on the rectangle to the circle center
+        let closestX = max(origin.x, min(circle.center.x, origin.x + size.width))
+        let closestY = max(origin.y, min(circle.center.y, origin.y + size.height))
+        
+        // Calculate distance between circle center and closest point
+        let dx = circle.center.x - closestX
+        let dy = circle.center.y - closestY
+        let distanceSquared = dx * dx + dy * dy
+        
+        return distanceSquared <= circle.radius * circle.radius
+    }
 }
 
 public struct Circle: Equatable, Codable, Sendable {
@@ -111,6 +138,10 @@ public struct Circle: Equatable, Codable, Sendable {
         let dy = point.y - center.y
         return dx*dx + dy*dy <= radius*radius
     }
+    
+    public func intersects(with rect: Rect) -> Bool {
+        return rect.intersects(with: self)
+    }
 }
 
 public enum Shape: Equatable, Codable, Sendable {
@@ -123,17 +154,61 @@ public enum Shape: Equatable, Codable, Sendable {
         case .circle(let id, _): return id
         }
     }
+    
+    public func intersects(with selectionRect: Rect) -> Bool {
+        switch self {
+        case .rect(_, let rect):
+            return rect.intersects(with: selectionRect)
+        case .circle(_, let circle):
+            return circle.intersects(with: selectionRect)
+        }
+    }
+}
+
+public struct SelectionRect: Equatable, Sendable {
+    public let start: Point
+    public let end: Point
+    
+    public init(start: Point, end: Point) {
+        self.start = start
+        self.end = end
+    }
+    
+    public var normalizedRect: Rect {
+        let minX = min(start.x, end.x)
+        let minY = min(start.y, end.y)
+        let maxX = max(start.x, end.x)
+        let maxY = max(start.y, end.y)
+        
+        return Rect(
+            origin: Point(x: minX, y: minY),
+            size: Size(width: maxX - minX, height: maxY - minY),
+            color: .black // Color doesn't matter for selection rect
+        )
+    }
 }
 
 public struct Document: Equatable, Codable, Sendable {
     public var shapes: [Shape] = []
-    public var selected: ShapeID? = nil
+    public var selected: Set<ShapeID> = []
     public var maxZIndex: Int = 0  // Track highest z-index
 
-    public init(shapes: [Shape] = [], selected: ShapeID? = nil) {
+    public init(shapes: [Shape] = [], selected: Set<ShapeID> = []) {
         self.shapes = shapes
         self.selected = selected
         self.maxZIndex = 0
+    }
+    
+    // Convenience property for backward compatibility with single selection
+    public var singleSelected: ShapeID? {
+        get { selected.count == 1 ? selected.first : nil }
+        set {
+            if let newValue = newValue {
+                selected = [newValue]
+            } else {
+                selected = []
+            }
+        }
     }
 
     public mutating func indexOfShape(id: ShapeID) -> Int? {
@@ -154,5 +229,22 @@ public struct Document: Equatable, Codable, Sendable {
             }
         }
         return nil
+    }
+    
+    public func shapesIntersecting(selectionRect: SelectionRect) -> Set<ShapeID> {
+        let rect = selectionRect.normalizedRect
+        var intersecting: Set<ShapeID> = []
+        
+        for shape in shapes {
+            if shape.intersects(with: rect) {
+                intersecting.insert(shape.id)
+            }
+        }
+        
+        return intersecting
+    }
+    
+    public var allShapeIDs: Set<ShapeID> {
+        Set(shapes.map { $0.id })
     }
 }

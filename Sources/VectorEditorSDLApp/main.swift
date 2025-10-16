@@ -191,9 +191,17 @@ func main() {
 
     // State for dragging
     var isDragging = false
-    var dragTarget: ShapeID? = nil
+    var isDuplicateDragging = false  // Track if Ctrl+drag is active
+    var isCtrlPressed = false  // Track if Ctrl was pressed when mouse went down
     var dragStart = UIPoint(0, 0)
     var visualOffset = UIPoint(0, 0)  // Visual offset for UI feedback
+    var hasDraggedSignificantly = false  // Track if mouse has moved enough to be considered a drag
+    var selectionHandledInMouseDown = false  // Track if we already handled selection in mouse down
+    
+    // State for rectangular selection
+    var isRectangleSelecting = false
+    var rectangleSelectionStart = UIPoint(0, 0)
+    var rectangleSelectionEnd = UIPoint(0, 0)
 
     // FPS tracking
     var frameCount: UInt64 = 0
@@ -239,48 +247,161 @@ func main() {
                 let mousePoint = UIPoint(x: event.button.x, y: event.button.y)
                 let modelPoint = mousePoint.toModelPoint()
 
+                // Check if Ctrl is held for toggle selection
+                let modState = SDL_GetModState()
+                let ctrlHeld = (modState.rawValue & KMOD_CTRL.rawValue) != 0
+
                 // Find shape under cursor
                 if let hitShape = document.hitTest(point: modelPoint) {
-                    // Select the shape and bring it to front using single composite command
-                    _ = try? commandManager.execute(
-                        command: SelectAndBringToFrontCommand.self, instruction: hitShape, on: &document)
-
-                    // Start dragging
-                    isDragging = true
-                    dragTarget = hitShape
-                    dragStart = mousePoint
-                    visualOffset = UIPoint(0, 0)
+                    // Store Ctrl state for later use
+                    isCtrlPressed = ctrlHeld
+                    hasDraggedSignificantly = false
+                    selectionHandledInMouseDown = false
+                    
+                    // Always start dragging when clicking on a shape
+                    // We'll decide what to do (toggle selection vs drag) when mouse is released
+                    if document.selected.contains(hitShape) {
+                        // Shape is already selected, start dragging all selected shapes
+                        isDragging = true
+                        isDuplicateDragging = ctrlHeld  // Track if this is a duplicate drag
+                        dragStart = mousePoint
+                        visualOffset = UIPoint(0, 0)
+                        // No selection change needed
+                    } else {
+                        // Shape is not selected
+                        if ctrlHeld {
+                            // For Ctrl+click on unselected shape, add it to selection and start dragging
+                            var newSelection = document.selected
+                            newSelection.insert(hitShape)
+                            _ = try? commandManager.execute(
+                                command: SelectShapeCommand.self, instruction: newSelection, on: &document)
+                            _ = try? commandManager.execute(
+                                command: BringToFrontCommand.self, instruction: hitShape, on: &document)
+                            selectionHandledInMouseDown = true  // Mark that we handled selection
+                        } else {
+                            // Normal click: select it and bring to front
+                            _ = try? commandManager.execute(
+                                command: SelectAndBringToFrontCommand.self, instruction: hitShape, on: &document)
+                            selectionHandledInMouseDown = true  // Mark that we handled selection
+                        }
+                        
+                        // Start dragging the shape(s)
+                        isDragging = true
+                        isDuplicateDragging = ctrlHeld  // Track if this is a duplicate drag
+                        dragStart = mousePoint
+                        visualOffset = UIPoint(0, 0)
+                    }
                 } else {
-                    _ = try? commandManager.execute(
-                        command: SelectAndBringToFrontCommand.self, instruction: nil, on: &document)
+                    if ctrlHeld {
+                        // Ctrl+click on empty space: start rectangle selection
+                        isRectangleSelecting = true
+                        rectangleSelectionStart = mousePoint
+                        rectangleSelectionEnd = mousePoint
+                    } else {
+                        // Click on empty space: deselect all
+                        _ = try? commandManager.execute(
+                            command: SelectShapeCommand.self, instruction: [], on: &document)
+                        
+                        // Start rectangle selection
+                        isRectangleSelecting = true
+                        rectangleSelectionStart = mousePoint
+                        rectangleSelectionEnd = mousePoint
+                    }
                 }
 
             case SDL_MOUSEBUTTONUP.rawValue:
-                if isDragging, let target = dragTarget {
-                    // Apply the actual movement command
-                    let moveOffset = visualOffset.toModelPoint()
-                    if moveOffset.x != 0 || moveOffset.y != 0 {
-                        let moveInstruction = MoveShapeCommand.Instruction(
-                            id: target, offset: moveOffset)
-                        _ = try? commandManager.execute(
-                            command: MoveShapeCommand.self, instruction: moveInstruction,
-                            on: &document)
+                if isDragging {
+                    if hasDraggedSignificantly {
+                        // This was a drag operation - apply movement
+                        let moveOffset = visualOffset.toModelPoint()
+                        if !document.selected.isEmpty {
+                            if isDuplicateDragging {
+                                // Use the duplicate and move command
+                                let instruction = (shapes: document.selected, offset: moveOffset)
+                                _ = try? commandManager.execute(
+                                    command: DuplicateAndMoveMultipleShapesCommand.self, instruction: instruction,
+                                    on: &document)
+                            } else {
+                                // Use the regular multi-shape move command
+                                let instruction = (shapes: document.selected, offset: moveOffset)
+                                _ = try? commandManager.execute(
+                                    command: MoveMultipleShapesCommand.self, instruction: instruction,
+                                    on: &document)
+                            }
+                        }
+                    } else {
+                        // This was just a click (no significant drag) - handle Ctrl+click toggle
+                        if isCtrlPressed && !selectionHandledInMouseDown {
+                            // Only toggle if we didn't already handle selection in mouse down
+                            // Find the shape that was clicked (hit test again)
+                            let mousePoint = UIPoint(x: event.button.x, y: event.button.y)
+                            let modelPoint = mousePoint.toModelPoint()
+                            if let hitShape = document.hitTest(point: modelPoint) {
+                                // Toggle selection of the clicked shape
+                                _ = try? commandManager.execute(
+                                    command: ToggleSelectionAndBringToFrontCommand.self, instruction: hitShape, on: &document)
+                            }
+                        }
+                        // For normal clicks (no Ctrl), selection was already handled in mouse down
                     }
 
                     // Reset drag state
                     isDragging = false
-                    dragTarget = nil
+                    isDuplicateDragging = false
+                    isCtrlPressed = false
+                    hasDraggedSignificantly = false
+                    selectionHandledInMouseDown = false
                     visualOffset = UIPoint(0, 0)
+                }
+                
+                if isRectangleSelecting {
+                    // Complete rectangle selection
+                    let modState = SDL_GetModState()
+                    let ctrlHeld = (modState.rawValue & KMOD_CTRL.rawValue) != 0
+                    let selectionMode: RectangularSelectionCommand.Instruction.SelectionMode = 
+                        ctrlHeld ? .toggle : .replace
+                    
+                    let selectionRect = SelectionRect(
+                        start: rectangleSelectionStart.toModelPoint(),
+                        end: rectangleSelectionEnd.toModelPoint()
+                    )
+                    
+                    let instruction = RectangularSelectionCommand.Instruction(
+                        selectionRect: selectionRect,
+                        mode: selectionMode
+                    )
+                    
+                    _ = try? commandManager.execute(
+                        command: RectangularSelectionCommand.self, 
+                        instruction: instruction, 
+                        on: &document)
+                    
+                    // Reset rectangle selection state
+                    isRectangleSelecting = false
                 }
 
             case SDL_MOUSEMOTION.rawValue:
                 if isDragging {
                     let currentMouse = UIPoint(x: event.motion.x, y: event.motion.y)
                     visualOffset = currentMouse - dragStart
+                    
+                    // Check if we've dragged significantly (more than 3 pixels in any direction)
+                    let dragDistance = sqrt(Double(visualOffset.x * visualOffset.x + visualOffset.y * visualOffset.y))
+                    if dragDistance > 3.0 {
+                        hasDraggedSignificantly = true
+                    }
+                } else if isRectangleSelecting {
+                    rectangleSelectionEnd = UIPoint(x: event.motion.x, y: event.motion.y)
                 }
 
             case SDL_KEYDOWN.rawValue:
                 switch event.key.keysym.sym {
+                case Int32(SDLK_a.rawValue):
+                    // Select all with Ctrl+A
+                    if event.key.keysym.mod & UInt16(KMOD_CTRL.rawValue) != 0 {
+                        _ = try? commandManager.execute(
+                            command: SelectAllCommand.self, instruction: (), on: &document)
+                    }
                 case Int32(SDLK_z.rawValue):
                     // Undo with Ctrl+Z
                     if event.key.keysym.mod & UInt16(KMOD_CTRL.rawValue) != 0 {
@@ -292,10 +413,11 @@ func main() {
                         _ = commandManager.redo(on: &document)
                     }
                 case Int32(SDLK_d.rawValue):
-                    // Delete selected shape with Delete key or Ctrl+D
-                    if let selected = document.selected {
+                    // Delete selected shapes with Delete key or Ctrl+D
+                    if !document.selected.isEmpty {
+                        // Delete all selected shapes as a single composite command
                         _ = try? commandManager.execute(
-                            command: DeleteShapeCommand.self, instruction: selected, on: &document)
+                            command: DeleteMultipleShapesCommand.self, instruction: document.selected, on: &document)
                     }
                 case Int32(SDLK_r.rawValue):
                     // Add modern blue rectangle
@@ -320,89 +442,73 @@ func main() {
                     _ = try? commandManager.execute(
                         command: AddShapeCommand.self, instruction: newCircle, on: &document)
                 case Int32(SDLK_1.rawValue):
-                    // Set selected shape to vibrant red
-                    if let selected = document.selected {
-                        let colorInstruction = SetColorCommand.Instruction(
-                            id: selected, color: .red)
+                    // Set selected shapes to vibrant red
+                    if !document.selected.isEmpty {
+                        let instruction = (shapes: document.selected, color: Color.red)
                         _ = try? commandManager.execute(
-                            command: SetColorCommand.self, instruction: colorInstruction,
-                            on: &document)
+                            command: SetColorMultipleShapesCommand.self, instruction: instruction, on: &document)
                     }
                 case Int32(SDLK_2.rawValue):
-                    // Set selected shape to fresh green
-                    if let selected = document.selected {
-                        let colorInstruction = SetColorCommand.Instruction(
-                            id: selected, color: .green)
+                    // Set selected shapes to fresh green
+                    if !document.selected.isEmpty {
+                        let instruction = (shapes: document.selected, color: Color.green)
                         _ = try? commandManager.execute(
-                            command: SetColorCommand.self, instruction: colorInstruction,
-                            on: &document)
+                            command: SetColorMultipleShapesCommand.self, instruction: instruction, on: &document)
                     }
                 case Int32(SDLK_3.rawValue):
-                    // Set selected shape to modern blue
-                    if let selected = document.selected {
-                        let colorInstruction = SetColorCommand.Instruction(
-                            id: selected, color: .blue)
+                    // Set selected shapes to modern blue
+                    if !document.selected.isEmpty {
+                        let instruction = (shapes: document.selected, color: Color.blue)
                         _ = try? commandManager.execute(
-                            command: SetColorCommand.self, instruction: colorInstruction,
-                            on: &document)
+                            command: SetColorMultipleShapesCommand.self, instruction: instruction, on: &document)
                     }
                 case Int32(SDLK_4.rawValue):
-                    // Set selected shape to rich purple
-                    if let selected = document.selected {
-                        let colorInstruction = SetColorCommand.Instruction(
-                            id: selected, color: .purple)
+                    // Set selected shapes to rich purple
+                    if !document.selected.isEmpty {
+                        let instruction = (shapes: document.selected, color: Color.purple)
                         _ = try? commandManager.execute(
-                            command: SetColorCommand.self, instruction: colorInstruction,
-                            on: &document)
+                            command: SetColorMultipleShapesCommand.self, instruction: instruction, on: &document)
                     }
                 case Int32(SDLK_5.rawValue):
-                    // Set selected shape to warm orange
-                    if let selected = document.selected {
-                        let colorInstruction = SetColorCommand.Instruction(
-                            id: selected, color: .orange)
+                    // Set selected shapes to warm orange
+                    if !document.selected.isEmpty {
+                        let instruction = (shapes: document.selected, color: Color.orange)
                         _ = try? commandManager.execute(
-                            command: SetColorCommand.self, instruction: colorInstruction,
-                            on: &document)
+                            command: SetColorMultipleShapesCommand.self, instruction: instruction, on: &document)
                     }
                 case Int32(SDLK_6.rawValue):
-                    // Set selected shape to cool teal
-                    if let selected = document.selected {
-                        let colorInstruction = SetColorCommand.Instruction(
-                            id: selected, color: .teal)
+                    // Set selected shapes to cool teal
+                    if !document.selected.isEmpty {
+                        let instruction = (shapes: document.selected, color: Color.teal)
                         _ = try? commandManager.execute(
-                            command: SetColorCommand.self, instruction: colorInstruction,
-                            on: &document)
+                            command: SetColorMultipleShapesCommand.self, instruction: instruction, on: &document)
                     }
                 case Int32(SDLK_7.rawValue):
-                    // Set selected shape to bright pink
-                    if let selected = document.selected {
-                        let colorInstruction = SetColorCommand.Instruction(
-                            id: selected, color: .pink)
+                    // Set selected shapes to bright pink
+                    if !document.selected.isEmpty {
+                        let instruction = (shapes: document.selected, color: Color.pink)
                         _ = try? commandManager.execute(
-                            command: SetColorCommand.self, instruction: colorInstruction,
-                            on: &document)
+                            command: SetColorMultipleShapesCommand.self, instruction: instruction, on: &document)
                     }
                 case Int32(SDLK_8.rawValue):
-                    // Set selected shape to golden amber
-                    if let selected = document.selected {
-                        let colorInstruction = SetColorCommand.Instruction(
-                            id: selected, color: .amber)
+                    // Set selected shapes to golden amber
+                    if !document.selected.isEmpty {
+                        let instruction = (shapes: document.selected, color: Color.amber)
                         _ = try? commandManager.execute(
-                            command: SetColorCommand.self, instruction: colorInstruction,
-                            on: &document)
+                            command: SetColorMultipleShapesCommand.self, instruction: instruction, on: &document)
                     }
                 case Int32(SDLK_SPACE.rawValue):
-                    // Duplicate and move selected shape (composite command demo)
-                    if let selected = document.selected {
+                    // Duplicate and move first selected shape (composite command demo)
+                    if let firstSelected = document.selected.first {
                         _ = try? commandManager.execute(
                             command: DuplicateAndMoveCommand.self,
-                            instruction: (id: selected, offset: Point(x: 20, y: 20)), on: &document)
+                            instruction: (id: firstSelected, offset: Point(x: 20, y: 20)), on: &document)
                     }
 
                 case Int32(SDLK_s.rawValue):
-                    if let selected = document.selected {
+                    if !document.selected.isEmpty {
                         _ = try? commandManager.execute(
-                            command: TriplicateCommand.self, instruction: selected, on: &document)
+                            command: TriplicateCommand.self, instruction: document.selected, on: &document)
                     }
                 default:
                     break
@@ -472,7 +578,8 @@ func main() {
             }
 
             // Calculate visual offset if this shape is being dragged
-            let renderOffset = (isDragging && dragTarget == shape.id) ? visualOffset : UIPoint(0, 0)
+            let isSelectedShape = document.selected.contains(shape.id)
+            let renderOffset = (isDragging && isSelectedShape && !isDuplicateDragging) ? visualOffset : UIPoint(0, 0)
 
             switch shape {
             case .rect(_, let r):
@@ -499,46 +606,139 @@ func main() {
                     SDL_RenderFillRect(renderer, &line)
                 }
             }
+            
+            // If Ctrl+dragging, also render the duplicated shape preview
+            if isDragging && isDuplicateDragging && isSelectedShape {
+                // Render duplicate with slightly transparent/different color
+                sdlAssert(
+                    SDL_SetRenderDrawColor(renderer, 
+                        UInt8(min(255, Int(color.r) + 50)), 
+                        UInt8(min(255, Int(color.g) + 50)), 
+                        UInt8(min(255, Int(color.b) + 50)), 
+                        180) == 0, "Failed to set duplicate color")
+                
+                switch shape {
+                case .rect(_, let r):
+                    let duplicateOrigin = r.origin.toUIPoint() + visualOffset
+                    var duplicateRect = SDL_Rect(
+                        x: duplicateOrigin.x,
+                        y: duplicateOrigin.y,
+                        w: Int32(r.size.width),
+                        h: Int32(r.size.height)
+                    )
+                    sdlAssert(SDL_RenderFillRect(renderer, &duplicateRect) == 0, "Failed to render duplicate rectangle")
+
+                case .circle(_, let c):
+                    let duplicateCenter = c.center.toUIPoint() + visualOffset
+                    let cx = duplicateCenter.x
+                    let cy = duplicateCenter.y
+                    let radius = Int32(c.radius)
+
+                    // Simple filled circle using horizontal lines
+                    for y in (cy - radius)...(cy + radius) {
+                        let dy = y - cy
+                        let dx = Int32(sqrt(max(0, Double(radius * radius - dy * dy))))
+                        var line = SDL_Rect(x: cx - dx, y: y, w: 2 * dx, h: 1)
+                        SDL_RenderFillRect(renderer, &line)
+                    }
+                }
+            }
 
             // Enhanced selection outline with 2px border and glow effect
-            if document.selected == shape.id {
+            if document.selected.contains(shape.id) {
                 // Create a bright cyan selection outline with glow
                 sdlAssert(
                     SDL_SetRenderDrawColor(renderer, 34, 211, 238, 255) == 0,
                     "Failed to set cyan selection color")
                 
-                switch shape {
-                case .rect(_, let r):
-                    let adjustedOrigin = r.origin.toUIPoint() + renderOffset
-                    
-                    // Draw 2px thick outline by drawing multiple rectangles
-                    for thickness in 0..<2 {
-                        var outline = SDL_Rect(
-                            x: adjustedOrigin.x - 2 - Int32(thickness),
-                            y: adjustedOrigin.y - 2 - Int32(thickness),
-                            w: Int32(r.size.width) + 4 + Int32(thickness * 2),
-                            h: Int32(r.size.height) + 4 + Int32(thickness * 2)
-                        )
-                        SDL_RenderDrawRect(renderer, &outline)
-                    }
-                    
-                case .circle(_, let c):
-                    let adjustedCenter = c.center.toUIPoint() + renderOffset
-                    let cx = adjustedCenter.x
-                    let cy = adjustedCenter.y
-                    
-                    // Draw 2px thick circle outline
-                    for outlineThickness in 0..<2 {
-                        let outerRadius = Int32(c.radius) + 2 + Int32(outlineThickness)
+                // Function to draw selection outline for a shape at given offset
+                let drawSelectionOutline = { (offset: UIPoint) in
+                    switch shape {
+                    case .rect(_, let r):
+                        let adjustedOrigin = r.origin.toUIPoint() + offset
                         
-                        // Draw circle outline with more points for smoothness
-                        for angle in stride(from: 0, to: 360, by: 1) {
-                            let radians = Double(angle) * Double.pi / 180.0
-                            let x = cx + Int32(Double(outerRadius) * cos(radians))
-                            let y = cy + Int32(Double(outerRadius) * sin(radians))
-                            SDL_RenderDrawPoint(renderer, x, y)
+                        // Draw 2px thick outline by drawing multiple rectangles
+                        for thickness in 0..<2 {
+                            var outline = SDL_Rect(
+                                x: adjustedOrigin.x - 2 - Int32(thickness),
+                                y: adjustedOrigin.y - 2 - Int32(thickness),
+                                w: Int32(r.size.width) + 4 + Int32(thickness * 2),
+                                h: Int32(r.size.height) + 4 + Int32(thickness * 2)
+                            )
+                            SDL_RenderDrawRect(renderer, &outline)
+                        }
+                        
+                    case .circle(_, let c):
+                        let adjustedCenter = c.center.toUIPoint() + offset
+                        let cx = adjustedCenter.x
+                        let cy = adjustedCenter.y
+                        
+                        // Draw 2px thick circle outline
+                        for outlineThickness in 0..<2 {
+                            let outerRadius = Int32(c.radius) + 2 + Int32(outlineThickness)
+                            
+                            // Draw circle outline with more points for smoothness
+                            for angle in stride(from: 0, to: 360, by: 1) {
+                                let radians = Double(angle) * Double.pi / 180.0
+                                let x = cx + Int32(Double(outerRadius) * cos(radians))
+                                let y = cy + Int32(Double(outerRadius) * sin(radians))
+                                SDL_RenderDrawPoint(renderer, x, y)
+                            }
                         }
                     }
+                }
+                
+                // Draw selection outline for original shape
+                if isDragging && !isDuplicateDragging {
+                    // Normal drag: show outline at offset position
+                    drawSelectionOutline(visualOffset)
+                } else {
+                    // Not dragging or Ctrl+drag: show outline at original position
+                    drawSelectionOutline(UIPoint(0, 0))
+                }
+                
+                // If Ctrl+dragging, also draw selection outline for duplicate
+                if isDragging && isDuplicateDragging {
+                    drawSelectionOutline(visualOffset)
+                }
+            }
+        }
+
+        // Draw rectangular selection if active
+        if isRectangleSelecting {
+            // Draw selection rectangle with dashed outline
+            sdlAssert(
+                SDL_SetRenderDrawColor(renderer, 100, 200, 255, 128) == 0,
+                "Failed to set selection rectangle color")
+            
+            let startX = min(rectangleSelectionStart.x, rectangleSelectionEnd.x)
+            let startY = min(rectangleSelectionStart.y, rectangleSelectionEnd.y)
+            let endX = max(rectangleSelectionStart.x, rectangleSelectionEnd.x)
+            let endY = max(rectangleSelectionStart.y, rectangleSelectionEnd.y)
+            
+            // Draw selection rectangle outline
+            var selectionRect = SDL_Rect(
+                x: startX,
+                y: startY,
+                w: endX - startX,
+                h: endY - startY
+            )
+            SDL_RenderDrawRect(renderer, &selectionRect)
+            
+            // Draw semi-transparent fill by drawing multiple inner rectangles
+            sdlAssert(
+                SDL_SetRenderDrawColor(renderer, 100, 200, 255, 64) == 0,
+                "Failed to set selection fill color")
+            
+            for i in 1..<3 {
+                var innerRect = SDL_Rect(
+                    x: startX + Int32(i),
+                    y: startY + Int32(i),
+                    w: endX - startX - Int32(i * 2),
+                    h: endY - startY - Int32(i * 2)
+                )
+                if innerRect.w > 0 && innerRect.h > 0 {
+                    SDL_RenderDrawRect(renderer, &innerRect)
                 }
             }
         }

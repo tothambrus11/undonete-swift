@@ -32,7 +32,7 @@ public struct AddShapeCommand: Command, Sendable {
     public func undo(on model: inout Document) {
         if let idx = model.indexOfShape(id: shape.id) {
             model.shapes.remove(at: idx)
-            if model.selected == shape.id { model.selected = nil }
+            model.selected.remove(shape.id)
         }
     }
 
@@ -195,11 +195,11 @@ public struct SelectAndBringToFront: CompositeActor {
             _ = try executor.execute(
                 command: BringToFrontCommand.self, instruction: shapeID, on: &model)
             _ = try executor.execute(
-                command: SelectShapeCommand.self, instruction: shapeID, on: &model)
+                command: SelectShapeCommand.self, instruction: [shapeID], on: &model)
         } else {
             // Just deselect if instruction is nil
             _ = try executor.execute(
-                command: SelectShapeCommand.self, instruction: nil, on: &model)
+                command: SelectShapeCommand.self, instruction: [], on: &model)
         }
     }
 }
@@ -245,12 +245,12 @@ public struct BringToFrontCommand: Command, Sendable {
 
 public struct SelectShapeCommand: Command, Sendable {
     public typealias Model = Document
-    public typealias Instruction = ShapeID?
+    public typealias Instruction = Set<ShapeID>
 
-    let previous: ShapeID?
-    let next: ShapeID?
+    let previous: Set<ShapeID>
+    let next: Set<ShapeID>
 
-    public static func execute(instruction: ShapeID?, on model: inout Document) throws -> (
+    public static func execute(instruction: Set<ShapeID>, on model: inout Document) throws -> (
         doneCommand: SelectShapeCommand, hadEffect: Bool
     ) {
         let prev = model.selected
@@ -286,7 +286,7 @@ public enum CompositePresets {
                 command: MoveShapeCommand.self,
                 instruction: .init(id: addCmd.shape.id, offset: offset), on: &model)
             _ = try exec.execute(
-                command: SelectShapeCommand.self, instruction: addCmd.shape.id, on: &model)
+                command: SelectShapeCommand.self, instruction: [addCmd.shape.id], on: &model)
         }
     }
 
@@ -323,7 +323,7 @@ public struct DuplicateAndMoveCommand: Command {
                     command: MoveShapeCommand.self,
                     instruction: .init(id: addCmd.shape.id, offset: instruction.offset), on: &model)
                 _ = try exec.execute(
-                    command: SelectShapeCommand.self, instruction: addCmd.shape.id, on: &model)
+                    command: SelectShapeCommand.self, instruction: [addCmd.shape.id], on: &model)
             }, on: &on)
 
         return (DuplicateAndMoveCommand(compositeCommand: doneCommand), hadEffect)
@@ -366,25 +366,242 @@ public struct DuplicateTwice: CompositeCommand {
 
 public struct Triplicate: CompositeActor {
     public static func compositeExecute(
-        instruction shapeToDuplicate: ShapeID, on model: inout Document,
+        instruction shapesToTriplicate: Set<ShapeID>, on model: inout Document,
         executor: inout CommandExecutor<Document>
     ) throws {
         // Store the original selection
         let originalSelection = model.selected
         
-        _ = try executor.execute(
-            command: DuplicateAndMoveCommand.self,
-            instruction: (id: shapeToDuplicate, offset: Point(x: 40, y: 40)), on: &model)
-        _ = try executor.execute(
-            command: DuplicateAndMoveCommand.self,
-            instruction: (id: shapeToDuplicate, offset: Point(x: -40, y: 40)), on: &model)
-        _ = try executor.execute(
-            command: DuplicateAndMoveCommand.self,
-            instruction: (id: shapeToDuplicate, offset: Point(x: 0, y: -60)), on: &model)
+        // Triplicate each selected shape
+        for shapeID in shapesToTriplicate {
+            _ = try executor.execute(
+                command: DuplicateAndMoveCommand.self,
+                instruction: (id: shapeID, offset: Point(x: 40, y: 40)), on: &model)
+            _ = try executor.execute(
+                command: DuplicateAndMoveCommand.self,
+                instruction: (id: shapeID, offset: Point(x: -40, y: 40)), on: &model)
+            _ = try executor.execute(
+                command: DuplicateAndMoveCommand.self,
+                instruction: (id: shapeID, offset: Point(x: 0, y: -60)), on: &model)
+        }
         
         // Restore the original selection
         _ = try executor.execute(
-            command: SelectAndBringToFrontCommand.self, instruction: originalSelection, on: &model)
+            command: SelectShapeCommand.self, instruction: originalSelection, on: &model)
     }
 }
 public typealias TriplicateCommand = CompositeCommandFromActor<Triplicate>
+
+// MARK: - Multiselection Commands
+
+public struct SelectAllCommand: Command, Sendable {
+    public typealias Model = Document
+    public typealias Instruction = Void
+    
+    let previous: Set<ShapeID>
+    
+    public static func execute(instruction: Void, on model: inout Document) throws -> (
+        doneCommand: SelectAllCommand, hadEffect: Bool
+    ) {
+        let prev = model.selected
+        let all = model.allShapeIDs
+        model.selected = all
+        return (SelectAllCommand(previous: prev), prev != all)
+    }
+    
+    public func undo(on model: inout Document) {
+        model.selected = previous
+    }
+    
+    public func redo(on model: inout Document) {
+        model.selected = model.allShapeIDs
+    }
+}
+
+public struct ToggleSelectionCommand: Command, Sendable {
+    public typealias Model = Document
+    public typealias Instruction = ShapeID
+    
+    let shapeID: ShapeID
+    let wasSelected: Bool
+    
+    public static func execute(instruction: ShapeID, on model: inout Document) throws -> (
+        doneCommand: ToggleSelectionCommand, hadEffect: Bool
+    ) {
+        let wasSelected = model.selected.contains(instruction)
+        if wasSelected {
+            model.selected.remove(instruction)
+        } else {
+            model.selected.insert(instruction)
+        }
+        return (ToggleSelectionCommand(shapeID: instruction, wasSelected: wasSelected), true)
+    }
+    
+    public func undo(on model: inout Document) {
+        if wasSelected {
+            model.selected.insert(shapeID)
+        } else {
+            model.selected.remove(shapeID)
+        }
+    }
+    
+    public func redo(on model: inout Document) {
+        if wasSelected {
+            model.selected.remove(shapeID)
+        } else {
+            model.selected.insert(shapeID)
+        }
+    }
+}
+
+public struct ToggleSelectionAndBringToFront: CompositeActor {
+    public static func compositeExecute(
+        instruction shapeID: ShapeID, on model: inout Document,
+        executor: inout CommandExecutor<Document>
+    ) throws {
+        // First bring to front, then toggle selection
+        _ = try executor.execute(
+            command: BringToFrontCommand.self, instruction: shapeID, on: &model)
+        _ = try executor.execute(
+            command: ToggleSelectionCommand.self, instruction: shapeID, on: &model)
+    }
+}
+public typealias ToggleSelectionAndBringToFrontCommand = CompositeCommandFromActor<ToggleSelectionAndBringToFront>
+
+public struct RectangularSelectionCommand: Command, Sendable {
+    public typealias Model = Document
+    public struct Instruction: Sendable {
+        public let selectionRect: SelectionRect
+        public let mode: SelectionMode
+        
+        public enum SelectionMode: Sendable {
+            case replace  // Normal rectangular selection
+            case toggle   // Ctrl+rectangular selection
+        }
+        
+        public init(selectionRect: SelectionRect, mode: SelectionMode) {
+            self.selectionRect = selectionRect
+            self.mode = mode
+        }
+    }
+    
+    let previous: Set<ShapeID>
+    let next: Set<ShapeID>
+    
+    public static func execute(instruction: Instruction, on model: inout Document) throws -> (
+        doneCommand: RectangularSelectionCommand, hadEffect: Bool
+    ) {
+        let prev = model.selected
+        let intersecting = model.shapesIntersecting(selectionRect: instruction.selectionRect)
+        
+        let next: Set<ShapeID>
+        switch instruction.mode {
+        case .replace:
+            next = intersecting
+        case .toggle:
+            // Toggle each intersecting shape
+            next = prev.symmetricDifference(intersecting)
+        }
+        
+        model.selected = next
+        return (RectangularSelectionCommand(previous: prev, next: next), prev != next)
+    }
+    
+    public func undo(on model: inout Document) {
+        model.selected = previous
+    }
+    
+    public func redo(on model: inout Document) {
+        model.selected = next
+    }
+}
+
+// MARK: - Multi-Shape Movement
+
+public struct MoveMultipleShapes: CompositeActor {
+    public static func compositeExecute(
+        instruction: (shapes: Set<ShapeID>, offset: Point), on model: inout Document,
+        executor: inout CommandExecutor<Document>
+    ) throws {
+        // Move each selected shape by the same offset
+        for shapeID in instruction.shapes {
+            let moveInstruction = MoveShapeCommand.Instruction(id: shapeID, offset: instruction.offset)
+            _ = try executor.execute(
+                command: MoveShapeCommand.self, instruction: moveInstruction, on: &model)
+        }
+    }
+}
+public typealias MoveMultipleShapesCommand = CompositeCommandFromActor<MoveMultipleShapes>
+
+// MARK: - Multi-Shape Duplication and Movement
+
+public struct DuplicateAndMoveMultipleShapes: CompositeActor {
+    public static func compositeExecute(
+        instruction: (shapes: Set<ShapeID>, offset: Point), on model: inout Document,
+        executor: inout CommandExecutor<Document>
+    ) throws {
+        var newShapeIDs: Set<ShapeID> = []
+        
+        // Duplicate each selected shape and move it
+        for shapeID in instruction.shapes {
+            guard let idx = model.indexOfShape(id: shapeID) else { continue }
+            let original = model.shapes[idx]
+            
+            // Create duplicated shape with new ID
+            let duplicated: Shape
+            switch original {
+            case .rect(_, let r): duplicated = .rect(.rect(UUID()), r)
+            case .circle(_, let c): duplicated = .circle(.circle(UUID()), c)
+            }
+            
+            // Add the duplicated shape
+            let (addCmd, _) = try executor.execute(
+                command: AddShapeCommand.self, instruction: duplicated, on: &model)
+            
+            // Move the duplicated shape by the offset
+            let moveInstruction = MoveShapeCommand.Instruction(id: addCmd.shape.id, offset: instruction.offset)
+            _ = try executor.execute(
+                command: MoveShapeCommand.self, instruction: moveInstruction, on: &model)
+            
+            newShapeIDs.insert(addCmd.shape.id)
+        }
+        
+        // Select the newly created shapes
+        _ = try executor.execute(
+            command: SelectShapeCommand.self, instruction: newShapeIDs, on: &model)
+    }
+}
+public typealias DuplicateAndMoveMultipleShapesCommand = CompositeCommandFromActor<DuplicateAndMoveMultipleShapes>
+
+// MARK: - Multi-Shape Deletion
+
+public struct DeleteMultipleShapes: CompositeActor {
+    public static func compositeExecute(
+        instruction shapes: Set<ShapeID>, on model: inout Document,
+        executor: inout CommandExecutor<Document>
+    ) throws {
+        // Delete each selected shape
+        for shapeID in shapes {
+            _ = try executor.execute(
+                command: DeleteShapeCommand.self, instruction: shapeID, on: &model)
+        }
+    }
+}
+public typealias DeleteMultipleShapesCommand = CompositeCommandFromActor<DeleteMultipleShapes>
+
+// MARK: - Multi-Shape Color Changes
+
+public struct SetColorMultipleShapes: CompositeActor {
+    public static func compositeExecute(
+        instruction: (shapes: Set<ShapeID>, color: Color), on model: inout Document,
+        executor: inout CommandExecutor<Document>
+    ) throws {
+        // Set color for each selected shape
+        for shapeID in instruction.shapes {
+            let colorInstruction = SetColorCommand.Instruction(id: shapeID, color: instruction.color)
+            _ = try executor.execute(
+                command: SetColorCommand.self, instruction: colorInstruction, on: &model)
+        }
+    }
+}
+public typealias SetColorMultipleShapesCommand = CompositeCommandFromActor<SetColorMultipleShapes>
