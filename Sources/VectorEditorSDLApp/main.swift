@@ -224,9 +224,14 @@ func main() {
             frameCount = 0
             lastFPSUpdate = currentTime
         }
+
         // Handle events
         var event = SDL_Event()
         while SDL_PollEvent(&event) != 0 {
+            var mouseX: Int32 = 0
+            var mouseY: Int32 = 0
+            SDL_GetMouseState(&mouseX, &mouseY)
+
             switch event.type {
             case SDL_QUIT.rawValue:
                 running = false
@@ -298,14 +303,14 @@ func main() {
                     let newRect = Shape.rect(
                         newRectId,
                         Rect(
-                            origin: Point(x: 150, y: 150), size: Size(width: 80, height: 60),
+                            origin: Point(x: Double(mouseX), y: Double(mouseY)), size: Size(width: 80, height: 60),
                             color: .red))
                     _ = try? commandManager.execute(command: AddShapeCommand.self, instruction: newRect, on: &document)
                 case Int32(SDLK_c.rawValue):
                     // Add blue circle
                     let newCircleId = ShapeID.circle(UUID())
                     let newCircle = Shape.circle(
-                        newCircleId, Circle(center: Point(x: 250, y: 250), radius: 40, color: .blue)
+                        newCircleId, Circle(center: Point(x: Double(mouseX), y: Double(mouseY)), radius: 40, color: .blue)
                     )
                     _ = try? commandManager.execute(command: AddShapeCommand.self, instruction: newCircle, on: &document)
                 case Int32(SDLK_1.rawValue):
