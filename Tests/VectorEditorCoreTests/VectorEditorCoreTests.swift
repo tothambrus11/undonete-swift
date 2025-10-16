@@ -47,14 +47,14 @@ struct VectorEditorCoreTests {
         _ = try AddShapeCommand.execute(instruction: baseShape, on: &doc, commandManager: &mgr)
 
         // success
-        let (_, ok) = try CompositeCommand.execute(instruction: CompositePresets.duplicateAndMove(id: baseId, offset: Point(x: 10, y: 0)), on: &doc, commandManager: &mgr)
+        let (_, ok) = try CompositeCommandImpl.execute(instruction: CompositePresets.duplicateAndMove(id: baseId, offset: Point(x: 10, y: 0)), on: &doc, commandManager: &mgr)
         #expect(ok)
         #expect(doc.shapes.count == 2)
 
         // failure path rollback
         let bogus = ShapeID.rect(UUID())
         do {
-            _ = try CompositeCommand.execute(instruction: CompositePresets.duplicateAndMove(id: bogus, offset: Point(x: 10, y: 0)), on: &doc, commandManager: &mgr)
+            _ = try CompositeCommandImpl.execute(instruction: CompositePresets.duplicateAndMove(id: bogus, offset: Point(x: 10, y: 0)), on: &doc, commandManager: &mgr)
             Issue.record("Expected error for notFound")
         } catch {
             // ensure no shape added

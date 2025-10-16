@@ -72,7 +72,7 @@ struct AddCircleCommand: Command {
         instruction: Circle(x: 10, y: 20, radius: 5), on: &model, commandManager: &commandExecutor)
     print(res)
 
-    _ = try CompositeCommand.execute(
+    _ = try CompositeCommandImpl.execute(
         instruction: { (model, executor) in
 
             _ = try executor.execute(

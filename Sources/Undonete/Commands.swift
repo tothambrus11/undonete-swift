@@ -128,7 +128,7 @@ public struct CommandExecutor<Model> {
         undoStack.removeAll()
     }
 }
-public struct CompositeCommand<M>: Command {
+public struct CompositeCommandImpl<M>: Command {
     public typealias Model = M
     public typealias CompositeResult = Void  // todo maybe add the possibility for results that are not saved in the command - when becomes necessary.
     public typealias Instruction = (inout Model, inout CommandExecutor<Model>) throws ->
@@ -150,7 +150,7 @@ public struct CompositeCommand<M>: Command {
             let undoStack = commandExecutor.extractUndoStack()
 
             return (
-                doneCommand: CompositeCommand(undoStack: undoStack),
+                doneCommand: CompositeCommandImpl(undoStack: undoStack),
                 hadEffect: !undoStack.isEmpty
             )
         } catch {
@@ -173,4 +173,36 @@ public struct CompositeCommand<M>: Command {
         }
     }
 
+}
+
+
+
+public protocol CompositeCommand: Command {
+    var compositeCommand: CompositeCommandImpl<Model> { get }
+    init(compositeCommand: CompositeCommandImpl<Model>)
+
+    static func compositeExecute(
+        instruction: Instruction, on model: inout Model, executor: inout CommandExecutor<Model>)
+        throws
+}
+
+extension CompositeCommand {
+    public static func execute(instruction: Instruction, on model: inout Model) throws -> (
+        doneCommand: Self, hadEffect: Bool
+    ) {
+        let (doneCommand, hadEffect) = try CompositeCommandImpl<Model>.execute(
+            instruction: { model, exec in
+                try compositeExecute(instruction: instruction, on: &model, executor: &exec)
+            }, on: &model)
+
+        return (Self(compositeCommand: doneCommand), hadEffect)
+    }
+
+    public func undo(on model: inout Model) {
+        compositeCommand.undo(on: &model)
+    }
+
+    public func redo(on model: inout Model) {
+        compositeCommand.redo(on: &model)
+    }
 }

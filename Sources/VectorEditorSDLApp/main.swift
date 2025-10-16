@@ -212,7 +212,8 @@ func main() {
     let circleId = ShapeID.circle(UUID())
     let circle = Shape.circle(
         circleId, Circle(center: Point(x: 300, y: 200), radius: 50, color: .blue))
-    _ = try? commandManager.execute(command: AddShapeCommand.self, instruction: circle, on: &document)
+    _ = try? commandManager.execute(
+        command: AddShapeCommand.self, instruction: circle, on: &document)
 
     var running = true
     while running {
@@ -244,7 +245,8 @@ func main() {
                 if let hitShape = document.hitTest(point: modelPoint) {
                     // Select the shape
                     selectedShape = hitShape
-                    _ = try? commandManager.execute(command: SelectShapeCommand.self, instruction: hitShape, on: &document)
+                    _ = try? commandManager.execute(
+                        command: SelectShapeCommand.self, instruction: hitShape, on: &document)
 
                     // Start dragging
                     isDragging = true
@@ -253,7 +255,8 @@ func main() {
                     visualOffset = UIPoint(0, 0)
                 } else {
                     selectedShape = nil
-                    _ = try? commandManager.execute(command: SelectShapeCommand.self, instruction: nil, on: &document)
+                    _ = try? commandManager.execute(
+                        command: SelectShapeCommand.self, instruction: nil, on: &document)
                 }
 
             case SDL_MOUSEBUTTONUP.rawValue:
@@ -264,7 +267,8 @@ func main() {
                         let moveInstruction = MoveShapeCommand.Instruction(
                             id: target, offset: moveOffset)
                         _ = try? commandManager.execute(
-                            command: MoveShapeCommand.self, instruction: moveInstruction, on: &document)
+                            command: MoveShapeCommand.self, instruction: moveInstruction,
+                            on: &document)
                     }
 
                     // Reset drag state
@@ -294,7 +298,8 @@ func main() {
                 case Int32(SDLK_d.rawValue):
                     // Delete selected shape with Delete key or Ctrl+D
                     if let selected = selectedShape {
-                        _ = try? commandManager.execute(command: DeleteShapeCommand.self, instruction: selected, on: &document)
+                        _ = try? commandManager.execute(
+                            command: DeleteShapeCommand.self, instruction: selected, on: &document)
                         selectedShape = nil
                     }
                 case Int32(SDLK_r.rawValue):
@@ -303,23 +308,30 @@ func main() {
                     let newRect = Shape.rect(
                         newRectId,
                         Rect(
-                            origin: Point(x: Double(mouseX), y: Double(mouseY)), size: Size(width: 80, height: 60),
+                            origin: Point(x: Double(mouseX), y: Double(mouseY)),
+                            size: Size(width: 80, height: 60),
                             color: .red))
-                    _ = try? commandManager.execute(command: AddShapeCommand.self, instruction: newRect, on: &document)
+                    _ = try? commandManager.execute(
+                        command: AddShapeCommand.self, instruction: newRect, on: &document)
                 case Int32(SDLK_c.rawValue):
                     // Add blue circle
                     let newCircleId = ShapeID.circle(UUID())
                     let newCircle = Shape.circle(
-                        newCircleId, Circle(center: Point(x: Double(mouseX), y: Double(mouseY)), radius: 40, color: .blue)
+                        newCircleId,
+                        Circle(
+                            center: Point(x: Double(mouseX), y: Double(mouseY)), radius: 40,
+                            color: .blue)
                     )
-                    _ = try? commandManager.execute(command: AddShapeCommand.self, instruction: newCircle, on: &document)
+                    _ = try? commandManager.execute(
+                        command: AddShapeCommand.self, instruction: newCircle, on: &document)
                 case Int32(SDLK_1.rawValue):
                     // Set selected shape to red
                     if let selected = selectedShape {
                         let colorInstruction = SetColorCommand.Instruction(
                             id: selected, color: .red)
                         _ = try? commandManager.execute(
-                            command: SetColorCommand.self, instruction: colorInstruction, on: &document)
+                            command: SetColorCommand.self, instruction: colorInstruction,
+                            on: &document)
                     }
                 case Int32(SDLK_2.rawValue):
                     // Set selected shape to green
@@ -327,7 +339,8 @@ func main() {
                         let colorInstruction = SetColorCommand.Instruction(
                             id: selected, color: .green)
                         _ = try? commandManager.execute(
-                            command: SetColorCommand.self, instruction: colorInstruction, on: &document)
+                            command: SetColorCommand.self, instruction: colorInstruction,
+                            on: &document)
                     }
                 case Int32(SDLK_3.rawValue):
                     // Set selected shape to blue
@@ -335,17 +348,20 @@ func main() {
                         let colorInstruction = SetColorCommand.Instruction(
                             id: selected, color: .blue)
                         _ = try? commandManager.execute(
-                            command: SetColorCommand.self, instruction: colorInstruction, on: &document)
+                            command: SetColorCommand.self, instruction: colorInstruction,
+                            on: &document)
                     }
                 case Int32(SDLK_SPACE.rawValue):
                     // Duplicate and move selected shape (composite command demo)
                     if let selected = selectedShape {
-                        let duplicateInstruction = CompositePresets.duplicateAndMove(
-                            id: selected,
-                            offset: Point(x: 20, y: 20)
-                        )
                         _ = try? commandManager.execute(
-                            command: CompositeCommand<Document>.self, instruction: duplicateInstruction, on: &document)
+                            command: DuplicateAndMoveCommand.self,
+                            instruction: (id: selected, offset: Point(x: 20, y: 20)), on: &document)
+                    }
+
+                case Int32(SDLK_s.rawValue):
+                    if let selected = selectedShape {
+                        _ = try? commandManager.execute(command: DuplicateTwice.self, instruction: selected, on: &document)
                     }
                 default:
                     break
