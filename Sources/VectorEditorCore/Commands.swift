@@ -283,7 +283,6 @@ public struct DuplicateAndMoveCommand: Command {
     public typealias Instruction = (id: ShapeID, offset: Point)
 }
 
-
 public struct DuplicateTwice: CompositeCommand {
     public let compositeCommand: CompositeCommandImpl<Document>
 
@@ -306,3 +305,21 @@ public struct DuplicateTwice: CompositeCommand {
             instruction: (id: shapeToDuplicate, offset: Point(x: -40, y: 40)), on: &model)
     }
 }
+
+public struct Triplicate: CompositeActor {
+    public static func compositeExecute(
+        instruction shapeToDuplicate: ShapeID, on model: inout Document,
+        executor: inout CommandExecutor<Document>
+    ) throws {
+        _ = try executor.execute(
+            command: DuplicateAndMoveCommand.self,
+            instruction: (id: shapeToDuplicate, offset: Point(x: 40, y: 40)), on: &model)
+        _ = try executor.execute(
+            command: DuplicateAndMoveCommand.self,
+            instruction: (id: shapeToDuplicate, offset: Point(x: -40, y: 40)), on: &model)
+        _ = try executor.execute(
+            command: DuplicateAndMoveCommand.self,
+            instruction: (id: shapeToDuplicate, offset: Point(x: 0, y: -60)), on: &model)
+    }
+}
+public typealias TriplicateCommand = CompositeCommandFromActor<Triplicate>

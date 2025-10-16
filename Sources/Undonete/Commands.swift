@@ -206,3 +206,32 @@ extension CompositeCommand {
         compositeCommand.redo(on: &model)
     }
 }
+
+
+public protocol CompositeActor {
+    associatedtype Instruction
+    associatedtype Model
+
+    static func compositeExecute(
+        instruction: Instruction, on model: inout Model, executor: inout CommandExecutor<Model>)
+        throws
+}
+
+public struct CompositeCommandFromActor<Actor: CompositeActor> : CompositeCommand{
+    public typealias Model = Actor.Model
+    public typealias Instruction = Actor.Instruction
+
+    public let compositeCommand: CompositeCommandImpl<Model>
+    
+    public init(compositeCommand: CompositeCommandImpl<Model>) {
+        self.compositeCommand = compositeCommand
+    }
+
+    public static func compositeExecute(
+        instruction: Instruction, on model: inout Model, executor: inout CommandExecutor<Model>
+    )
+        throws
+    {
+        try Actor.compositeExecute(instruction: instruction, on: &model, executor: &executor)
+    }
+}
