@@ -185,6 +185,64 @@ public struct SetColorCommand: Command, Sendable {
     }
 }
 
+public struct SelectAndBringToFront: CompositeActor {
+    public static func compositeExecute(
+        instruction shapeID: ShapeID?, on model: inout Document,
+        executor: inout CommandExecutor<Document>
+    ) throws {
+        if let shapeID = shapeID {
+            // First bring to front, then select
+            _ = try executor.execute(
+                command: BringToFrontCommand.self, instruction: shapeID, on: &model)
+            _ = try executor.execute(
+                command: SelectShapeCommand.self, instruction: shapeID, on: &model)
+        } else {
+            // Just deselect if instruction is nil
+            _ = try executor.execute(
+                command: SelectShapeCommand.self, instruction: nil, on: &model)
+        }
+    }
+}
+public typealias SelectAndBringToFrontCommand = CompositeCommandFromActor<SelectAndBringToFront>
+
+public struct BringToFrontCommand: Command, Sendable {
+    public typealias Model = Document
+    public typealias Instruction = ShapeID
+
+    let id: ShapeID
+    let originalIndex: Int
+
+    public static func execute(instruction: ShapeID, on model: inout Document) throws -> (
+        doneCommand: BringToFrontCommand, hadEffect: Bool
+    ) {
+        guard let idx = model.indexOfShape(id: instruction) else { throw VectorError.notFound }
+        
+        // If it's already at the front (last position), no change needed
+        if idx == model.shapes.count - 1 {
+            return (BringToFrontCommand(id: instruction, originalIndex: idx), false)
+        }
+        
+        let shape = model.shapes.remove(at: idx)
+        model.shapes.append(shape)  // Move to end (front of rendering order)
+        model.maxZIndex += 1
+        
+        return (BringToFrontCommand(id: instruction, originalIndex: idx), true)
+    }
+
+    public func undo(on model: inout Document) {
+        // Find the shape and move it back to its original position
+        if let currentIndex = model.indexOfShape(id: id) {
+            let shape = model.shapes.remove(at: currentIndex)
+            model.shapes.insert(shape, at: originalIndex)
+        }
+    }
+
+    public func redo(on model: inout Document) {
+        // Bring the shape to front again
+        _ = try? BringToFrontCommand.execute(instruction: id, on: &model)
+    }
+}
+
 public struct SelectShapeCommand: Command, Sendable {
     public typealias Model = Document
     public typealias Instruction = ShapeID?
@@ -311,6 +369,9 @@ public struct Triplicate: CompositeActor {
         instruction shapeToDuplicate: ShapeID, on model: inout Document,
         executor: inout CommandExecutor<Document>
     ) throws {
+        // Store the original selection
+        let originalSelection = model.selected
+        
         _ = try executor.execute(
             command: DuplicateAndMoveCommand.self,
             instruction: (id: shapeToDuplicate, offset: Point(x: 40, y: 40)), on: &model)
@@ -320,6 +381,10 @@ public struct Triplicate: CompositeActor {
         _ = try executor.execute(
             command: DuplicateAndMoveCommand.self,
             instruction: (id: shapeToDuplicate, offset: Point(x: 0, y: -60)), on: &model)
+        
+        // Restore the original selection
+        _ = try executor.execute(
+            command: SelectAndBringToFrontCommand.self, instruction: originalSelection, on: &model)
     }
 }
 public typealias TriplicateCommand = CompositeCommandFromActor<Triplicate>

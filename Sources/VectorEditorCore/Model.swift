@@ -54,9 +54,16 @@ public struct Color: Equatable, Codable, Sendable {
 
     public static let black = Color(r: 0, g: 0, b: 0, a: 255)
     public static let white = Color(r: 255, g: 255, b: 255, a: 255)
-    public static let red = Color(r: 255, g: 0, b: 0, a: 255)
-    public static let green = Color(r: 0, g: 255, b: 0, a: 255)
-    public static let blue = Color(r: 0, g: 0, b: 255, a: 255)
+    
+    // Modern, attractive color palette
+    public static let red = Color(r: 239, g: 68, b: 68, a: 255)      // Vibrant red
+    public static let green = Color(r: 34, g: 197, b: 94, a: 255)    // Fresh green  
+    public static let blue = Color(r: 59, g: 130, b: 246, a: 255)    // Modern blue
+    public static let purple = Color(r: 147, g: 51, b: 234, a: 255)  // Rich purple
+    public static let orange = Color(r: 249, g: 115, b: 22, a: 255)  // Warm orange
+    public static let teal = Color(r: 20, g: 184, b: 166, a: 255)    // Cool teal
+    public static let pink = Color(r: 236, g: 72, b: 153, a: 255)    // Bright pink
+    public static let amber = Color(r: 245, g: 158, b: 11, a: 255)   // Golden amber
 }
 
 public struct Rect: Equatable, Codable, Sendable {
@@ -121,10 +128,12 @@ public enum Shape: Equatable, Codable, Sendable {
 public struct Document: Equatable, Codable, Sendable {
     public var shapes: [Shape] = []
     public var selected: ShapeID? = nil
+    public var maxZIndex: Int = 0  // Track highest z-index
 
     public init(shapes: [Shape] = [], selected: ShapeID? = nil) {
         self.shapes = shapes
         self.selected = selected
+        self.maxZIndex = 0
     }
 
     public mutating func indexOfShape(id: ShapeID) -> Int? {

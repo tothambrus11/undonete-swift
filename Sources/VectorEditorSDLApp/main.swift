@@ -134,8 +134,8 @@ func drawDigit(_ renderer: OpaquePointer?, digit: Int, x: Int32, y: Int32, size:
 
     if digit < 0 || digit > 9 { return }
 
-    // Set color to black:
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255)
+    // Set color to white for better visibility on dark background:
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255)
     let pattern = patterns[digit]
     for (row, line) in pattern.enumerated() {
         for (col, char) in line.enumerated() {
@@ -195,23 +195,21 @@ func main() {
     var dragStart = UIPoint(0, 0)
     var visualOffset = UIPoint(0, 0)  // Visual offset for UI feedback
 
-    var selectedShape: ShapeID? = nil
-
     // FPS tracking
     var frameCount: UInt64 = 0
     var lastFPSUpdate = SDL_GetTicks64()
     var currentFPS: Double = 0.0
 
-    // Add some initial shapes
+    // Add some initial shapes with attractive colors
     let rectId = ShapeID.rect(UUID())
     let rect = Shape.rect(
-        rectId, Rect(origin: Point(x: 100, y: 100), size: Size(width: 120, height: 80), color: .red)
+        rectId, Rect(origin: Point(x: 100, y: 100), size: Size(width: 120, height: 80), color: .blue)
     )
     _ = try? commandManager.execute(command: AddShapeCommand.self, instruction: rect, on: &document)
 
     let circleId = ShapeID.circle(UUID())
     let circle = Shape.circle(
-        circleId, Circle(center: Point(x: 300, y: 200), radius: 50, color: .blue))
+        circleId, Circle(center: Point(x: 300, y: 200), radius: 50, color: .purple))
     _ = try? commandManager.execute(
         command: AddShapeCommand.self, instruction: circle, on: &document)
 
@@ -243,10 +241,9 @@ func main() {
 
                 // Find shape under cursor
                 if let hitShape = document.hitTest(point: modelPoint) {
-                    // Select the shape
-                    selectedShape = hitShape
+                    // Select the shape and bring it to front using single composite command
                     _ = try? commandManager.execute(
-                        command: SelectShapeCommand.self, instruction: hitShape, on: &document)
+                        command: SelectAndBringToFrontCommand.self, instruction: hitShape, on: &document)
 
                     // Start dragging
                     isDragging = true
@@ -254,9 +251,8 @@ func main() {
                     dragStart = mousePoint
                     visualOffset = UIPoint(0, 0)
                 } else {
-                    selectedShape = nil
                     _ = try? commandManager.execute(
-                        command: SelectShapeCommand.self, instruction: nil, on: &document)
+                        command: SelectAndBringToFrontCommand.self, instruction: nil, on: &document)
                 }
 
             case SDL_MOUSEBUTTONUP.rawValue:
@@ -297,36 +293,35 @@ func main() {
                     }
                 case Int32(SDLK_d.rawValue):
                     // Delete selected shape with Delete key or Ctrl+D
-                    if let selected = selectedShape {
+                    if let selected = document.selected {
                         _ = try? commandManager.execute(
                             command: DeleteShapeCommand.self, instruction: selected, on: &document)
-                        selectedShape = nil
                     }
                 case Int32(SDLK_r.rawValue):
-                    // Add red rectangle
+                    // Add modern blue rectangle
                     let newRectId = ShapeID.rect(UUID())
                     let newRect = Shape.rect(
                         newRectId,
                         Rect(
                             origin: Point(x: Double(mouseX), y: Double(mouseY)),
                             size: Size(width: 80, height: 60),
-                            color: .red))
+                            color: .blue))
                     _ = try? commandManager.execute(
                         command: AddShapeCommand.self, instruction: newRect, on: &document)
                 case Int32(SDLK_c.rawValue):
-                    // Add blue circle
+                    // Add purple circle
                     let newCircleId = ShapeID.circle(UUID())
                     let newCircle = Shape.circle(
                         newCircleId,
                         Circle(
                             center: Point(x: Double(mouseX), y: Double(mouseY)), radius: 40,
-                            color: .blue)
+                            color: .purple)
                     )
                     _ = try? commandManager.execute(
                         command: AddShapeCommand.self, instruction: newCircle, on: &document)
                 case Int32(SDLK_1.rawValue):
-                    // Set selected shape to red
-                    if let selected = selectedShape {
+                    // Set selected shape to vibrant red
+                    if let selected = document.selected {
                         let colorInstruction = SetColorCommand.Instruction(
                             id: selected, color: .red)
                         _ = try? commandManager.execute(
@@ -334,8 +329,8 @@ func main() {
                             on: &document)
                     }
                 case Int32(SDLK_2.rawValue):
-                    // Set selected shape to green
-                    if let selected = selectedShape {
+                    // Set selected shape to fresh green
+                    if let selected = document.selected {
                         let colorInstruction = SetColorCommand.Instruction(
                             id: selected, color: .green)
                         _ = try? commandManager.execute(
@@ -343,24 +338,69 @@ func main() {
                             on: &document)
                     }
                 case Int32(SDLK_3.rawValue):
-                    // Set selected shape to blue
-                    if let selected = selectedShape {
+                    // Set selected shape to modern blue
+                    if let selected = document.selected {
                         let colorInstruction = SetColorCommand.Instruction(
                             id: selected, color: .blue)
                         _ = try? commandManager.execute(
                             command: SetColorCommand.self, instruction: colorInstruction,
                             on: &document)
                     }
+                case Int32(SDLK_4.rawValue):
+                    // Set selected shape to rich purple
+                    if let selected = document.selected {
+                        let colorInstruction = SetColorCommand.Instruction(
+                            id: selected, color: .purple)
+                        _ = try? commandManager.execute(
+                            command: SetColorCommand.self, instruction: colorInstruction,
+                            on: &document)
+                    }
+                case Int32(SDLK_5.rawValue):
+                    // Set selected shape to warm orange
+                    if let selected = document.selected {
+                        let colorInstruction = SetColorCommand.Instruction(
+                            id: selected, color: .orange)
+                        _ = try? commandManager.execute(
+                            command: SetColorCommand.self, instruction: colorInstruction,
+                            on: &document)
+                    }
+                case Int32(SDLK_6.rawValue):
+                    // Set selected shape to cool teal
+                    if let selected = document.selected {
+                        let colorInstruction = SetColorCommand.Instruction(
+                            id: selected, color: .teal)
+                        _ = try? commandManager.execute(
+                            command: SetColorCommand.self, instruction: colorInstruction,
+                            on: &document)
+                    }
+                case Int32(SDLK_7.rawValue):
+                    // Set selected shape to bright pink
+                    if let selected = document.selected {
+                        let colorInstruction = SetColorCommand.Instruction(
+                            id: selected, color: .pink)
+                        _ = try? commandManager.execute(
+                            command: SetColorCommand.self, instruction: colorInstruction,
+                            on: &document)
+                    }
+                case Int32(SDLK_8.rawValue):
+                    // Set selected shape to golden amber
+                    if let selected = document.selected {
+                        let colorInstruction = SetColorCommand.Instruction(
+                            id: selected, color: .amber)
+                        _ = try? commandManager.execute(
+                            command: SetColorCommand.self, instruction: colorInstruction,
+                            on: &document)
+                    }
                 case Int32(SDLK_SPACE.rawValue):
                     // Duplicate and move selected shape (composite command demo)
-                    if let selected = selectedShape {
+                    if let selected = document.selected {
                         _ = try? commandManager.execute(
                             command: DuplicateAndMoveCommand.self,
                             instruction: (id: selected, offset: Point(x: 20, y: 20)), on: &document)
                     }
 
                 case Int32(SDLK_s.rawValue):
-                    if let selected = selectedShape {
+                    if let selected = document.selected {
                         _ = try? commandManager.execute(
                             command: TriplicateCommand.self, instruction: selected, on: &document)
                     }
@@ -372,9 +412,9 @@ func main() {
             }
         }
 
-        // Clear screen with light gray background
+        // Clear screen with modern dark background
         sdlAssert(
-            SDL_SetRenderDrawColor(renderer, 240, 240, 240, 255) == 0,
+            SDL_SetRenderDrawColor(renderer, 30, 30, 35, 255) == 0,
             "Failed to set background color")
         sdlAssert(SDL_RenderClear(renderer) == 0, "Failed to clear renderer")
 
@@ -386,20 +426,40 @@ func main() {
             case .circle(_, let c): color = c.color
             }
 
-            // Apply color
+            // Apply color with enhanced color mapping
             switch color {
             case .red:
                 sdlAssert(
-                    SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255) == 0, "Failed to set red color"
+                    SDL_SetRenderDrawColor(renderer, 239, 68, 68, 255) == 0, "Failed to set red color"
                 )
             case .green:
                 sdlAssert(
-                    SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255) == 0,
+                    SDL_SetRenderDrawColor(renderer, 34, 197, 94, 255) == 0,
                     "Failed to set green color")
             case .blue:
                 sdlAssert(
-                    SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255) == 0,
+                    SDL_SetRenderDrawColor(renderer, 59, 130, 246, 255) == 0,
                     "Failed to set blue color")
+            case .purple:
+                sdlAssert(
+                    SDL_SetRenderDrawColor(renderer, 147, 51, 234, 255) == 0,
+                    "Failed to set purple color")
+            case .orange:
+                sdlAssert(
+                    SDL_SetRenderDrawColor(renderer, 249, 115, 22, 255) == 0,
+                    "Failed to set orange color")
+            case .teal:
+                sdlAssert(
+                    SDL_SetRenderDrawColor(renderer, 20, 184, 166, 255) == 0,
+                    "Failed to set teal color")
+            case .pink:
+                sdlAssert(
+                    SDL_SetRenderDrawColor(renderer, 236, 72, 153, 255) == 0,
+                    "Failed to set pink color")
+            case .amber:
+                sdlAssert(
+                    SDL_SetRenderDrawColor(renderer, 245, 158, 11, 255) == 0,
+                    "Failed to set amber color")
             case .black:
                 sdlAssert(
                     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255) == 0, "Failed to set black color"
@@ -440,47 +500,58 @@ func main() {
                 }
             }
 
-            // Highlight selected shape with yellow outline
-            if selectedShape == shape.id {
+            // Enhanced selection outline with 2px border and glow effect
+            if document.selected == shape.id {
+                // Create a bright cyan selection outline with glow
                 sdlAssert(
-                    SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255) == 0,
-                    "Failed to set yellow color")
+                    SDL_SetRenderDrawColor(renderer, 34, 211, 238, 255) == 0,
+                    "Failed to set cyan selection color")
+                
                 switch shape {
                 case .rect(_, let r):
                     let adjustedOrigin = r.origin.toUIPoint() + renderOffset
-                    var outline = SDL_Rect(
-                        x: adjustedOrigin.x - 2,
-                        y: adjustedOrigin.y - 2,
-                        w: Int32(r.size.width) + 4,
-                        h: Int32(r.size.height) + 4
-                    )
-                    SDL_RenderDrawRect(renderer, &outline)
+                    
+                    // Draw 2px thick outline by drawing multiple rectangles
+                    for thickness in 0..<2 {
+                        var outline = SDL_Rect(
+                            x: adjustedOrigin.x - 2 - Int32(thickness),
+                            y: adjustedOrigin.y - 2 - Int32(thickness),
+                            w: Int32(r.size.width) + 4 + Int32(thickness * 2),
+                            h: Int32(r.size.height) + 4 + Int32(thickness * 2)
+                        )
+                        SDL_RenderDrawRect(renderer, &outline)
+                    }
+                    
                 case .circle(_, let c):
                     let adjustedCenter = c.center.toUIPoint() + renderOffset
                     let cx = adjustedCenter.x
                     let cy = adjustedCenter.y
-                    let outerRadius = Int32(c.radius) + 2
-
-                    // Simple circle outline using points
-                    for angle in stride(from: 0, to: 360, by: 3) {
-                        let radians = Double(angle) * Double.pi / 180.0
-                        let x = cx + Int32(Double(outerRadius) * cos(radians))
-                        let y = cy + Int32(Double(outerRadius) * sin(radians))
-                        SDL_RenderDrawPoint(renderer, x, y)
+                    
+                    // Draw 2px thick circle outline
+                    for outlineThickness in 0..<2 {
+                        let outerRadius = Int32(c.radius) + 2 + Int32(outlineThickness)
+                        
+                        // Draw circle outline with more points for smoothness
+                        for angle in stride(from: 0, to: 360, by: 1) {
+                            let radians = Double(angle) * Double.pi / 180.0
+                            let x = cx + Int32(Double(outerRadius) * cos(radians))
+                            let y = cy + Int32(Double(outerRadius) * sin(radians))
+                            SDL_RenderDrawPoint(renderer, x, y)
+                        }
                     }
                 }
             }
         }
 
-        // Display FPS in top-left corner
+        // Display FPS in top-left corner with bright text on dark background
         sdlAssert(
             SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255) == 0, "Failed to set white color")
 
         // Draw FPS number using simple bitmap approach
         drawNumber(renderer, number: Int(currentFPS), x: 40, y: 10, size: 2)
 
-        // Draw "FPS" label
-        sdlAssert(SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255) == 0, "Failed to set black color")
+        // Draw "FPS" label in white
+        sdlAssert(SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255) == 0, "Failed to set white color")
 
         // Simple "F"
         var rect = SDL_Rect(x: 10, y: 10, w: 2, h: 10)
