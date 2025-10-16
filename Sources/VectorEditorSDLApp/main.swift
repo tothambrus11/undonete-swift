@@ -361,7 +361,8 @@ func main() {
 
                 case Int32(SDLK_s.rawValue):
                     if let selected = selectedShape {
-                        _ = try? commandManager.execute(command: TriplicateCommand.self, instruction: selected, on: &document)
+                        _ = try? commandManager.execute(
+                            command: TriplicateCommand.self, instruction: selected, on: &document)
                     }
                 default:
                     break

@@ -138,13 +138,13 @@ public struct CompositeCommandImpl<M>: Command {
 
     private init(undoStack: [any Command<Model>]) {
         self.undoStack = undoStack
-    }
+    } 
 
     public static func execute(instruction: Instruction, on model: inout Model) throws -> (
         doneCommand: Self, hadEffect: Bool
     ) {
         var commandExecutor = CommandExecutor<Model>()
-
+ 
         do {
             try instruction(&model, &commandExecutor)
             let undoStack = commandExecutor.extractUndoStack()
