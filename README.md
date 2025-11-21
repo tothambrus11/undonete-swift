@@ -49,3 +49,7 @@ swift run VectorEditorSDLApp
 ✅ **Great UX**: Linear undo/redo with keyboard shortcuts, visual selection feedback  
 ✅ **Unit Testable Core**: Pure Swift model separate from SDL, 100% test coverage of core logic  
 ✅ **Command Features**: Add, delete, move, select, set color - all via the Command protocol
+
+## Future Work
+- [ ] Serializable commands (in principle, should be possible, just needs to be implemented)
+- [ ] The current implementation uses a linear command history. It would be cool to implement a version where we can go back in time, explore diverging futures (making a history tree), then potentially merging results or rebasing/cherry-picking changes. That would result in a git-like system, but it would be interesting to see if domain knowledge about the set of operations/data structures can bring us any opportunities for "smart" merging or conflict detection. Conflict-free replicated data types are an adjacent topic, but their merging step tends to be less smart, which may not be sufficient for lots of distributed editing applications.
